@@ -1,5 +1,7 @@
 # Estructura-de-datos
 Algoritmo para almacenar datos en un array
+
+
 package main;
 import java.util.Scanner;
 //creaciion de clases
