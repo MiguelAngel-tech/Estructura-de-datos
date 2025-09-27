@@ -1,128 +1,187 @@
 import java.util.Scanner;
 
-public class MetodoSimplex {
+public class Simplex {
     private double[][] tabla; // Tabla simplex
     private int numVariables; // Número de variables de decisión
     private int numRestricciones; // Número de restricciones
-    private int numVariablesTotales; // Variables + holguras + artificiales
+    private int numVariablesTotales; // Variables + holguras
     private boolean esMaximizacion;
     private int[] variablesBasicas;
+    private String[] nombresVariables;
+
     public static void main(String[] args) {
         Scanner scanner = new Scanner(System.in);
+        
         System.out.println("=== MÉTODO SIMPLEX ===");
         System.out.print("¿Es maximización (1) o minimización (2)?: ");
         int tipo = scanner.nextInt();
         boolean esMaximizacion = (tipo == 1);
+        
         System.out.print("Número de variables de decisión (x1, x2, ...): ");
         int numVariables = scanner.nextInt();
+        
         System.out.print("Número de restricciones: ");
         int numRestricciones = scanner.nextInt();
+        
         MetodoSimplex simplex = new MetodoSimplex(numVariables, numRestricciones, esMaximizacion);
         simplex.ingresarDatos(scanner);
         simplex.resolver();
+        
         scanner.close();
     }
-    public MetodoSimplex(int numVariables, int numRestricciones, boolean esMaximizacion) {
+    
+    public Simplex(int numVariables, int numRestricciones, boolean esMaximizacion) {
         this.numVariables = numVariables;
         this.numRestricciones = numRestricciones;
         this.esMaximizacion = esMaximizacion;
         this.numVariablesTotales = numVariables + numRestricciones;
         this.variablesBasicas = new int[numRestricciones];
-        // Inicializar tabla simplex: filas = restricciones + 1, columnas = variables + holguras + 1 (LD)
+        this.nombresVariables = new String[numVariablesTotales];
+        
+        // Inicializar nombres de variables
+        for (int i = 0; i < numVariables; i++) {
+            nombresVariables[i] = "x" + (i + 1);
+        }
+        for (int i = 0; i < numRestricciones; i++) {
+            nombresVariables[numVariables + i] = "s" + (i + 1);
+        }
+        
+        // Inicializar tabla simplex
         tabla = new double[numRestricciones + 1][numVariablesTotales + 1];
     }
+    
     public void ingresarDatos(Scanner scanner) {
         System.out.println("\n=== INGRESO DE LA FUNCIÓN OBJETIVO ===");
         System.out.println("Ingrese los coeficientes de la función objetivo:");
-        // Ingresar coeficientes de la función objetivo
+        
+        // Ingresar coeficientes de la función objetivo para variables de decisión
         for (int j = 0; j < numVariables; j++) {
             System.out.printf("Coeficiente de x%d: ", j + 1);
             double coeficiente = scanner.nextDouble();
-            tabla[numRestricciones][j] = esMaximizacion ? -coeficiente : coeficiente;
+            
+            if (esMaximizacion) {
+                tabla[numRestricciones][j] = -coeficiente; // Maximización: Z positiva, demás negativos
+            } else {
+                tabla[numRestricciones][j] = coeficiente; // Minimización: Z negativa, demás positivos
+            }
         }
+        
+        // Coeficientes de las variables de holgura en la función objetivo = 1
+        for (int j = numVariables; j < numVariablesTotales; j++) {
+            tabla[numRestricciones][j] = 1.0;
+        }
+        
         System.out.println("\n=== INGRESO DE RESTRICCIONES ===");
         for (int i = 0; i < numRestricciones; i++) {
             System.out.printf("\n--- Restricción %d ---\n", i + 1);
-            // Coeficientes de las variables
+            
+            // Coeficientes de las variables de decisión
             for (int j = 0; j < numVariables; j++) {
                 System.out.printf("Coeficiente de x%d: ", j + 1);
                 tabla[i][j] = scanner.nextDouble();
             }
+            
+            // Coeficientes de las variables de holgura
+            for (int j = numVariables; j < numVariablesTotales; j++) {
+                tabla[i][j] = (j == numVariables + i) ? 1.0 : 0.0;
+            }
+            
             // Lado derecho (LD)
             System.out.print("Lado derecho (LD) de la restricción: ");
             tabla[i][numVariablesTotales] = scanner.nextDouble();
-            // Variable de holgura (automática)
-            tabla[i][numVariables + i] = 1.0;
-            variablesBasicas[i] = numVariables + i;
-            System.out.printf("Variable de holgura agregada: s%d\n", i + 1);
+            
+            variablesBasicas[i] = numVariables + i; // Variable de holgura básica inicial
         }
+        
         // Mostrar tabla inicial
         System.out.println("\n=== TABLA INICIAL SIMPLEX ===");
         imprimirTabla();
     }
+    
     public void resolver() {
         System.out.println("\n=== INICIO DEL MÉTODO SIMPLEX ===");
         int iteracion = 0;
+        
         while (!esOptimo()) {
             iteracion++;
             System.out.printf("\n--- Iteración %d ---\n", iteracion);
+            
             int columnaPivote = encontrarColumnaPivote();
             if (columnaPivote == -1) {
                 System.out.println("Solución óptima encontrada!");
                 break;
             }
+            
             int filaPivote = encontrarFilaPivote(columnaPivote);
             if (filaPivote == -1) {
                 System.out.println("El problema es no acotado!");
                 return;
             }
-            System.out.printf("Elemento pivote: tabla[%d][%d] = %.4f\n", 
-            filaPivote, columnaPivote, tabla[filaPivote][columnaPivote]);
+            
+            System.out.printf("Variable entrante: %s\n", nombresVariables[columnaPivote]);
+            System.out.printf("Variable saliente: %s\n", nombresVariables[variablesBasicas[filaPivote]]);
+            System.out.printf("Elemento pivote: %.4f\n", tabla[filaPivote][columnaPivote]);
+            
             realizarPivoteo(filaPivote, columnaPivote);
             variablesBasicas[filaPivote] = columnaPivote;
+            
             imprimirTabla();
         }
+        
         mostrarSolucion();
     }
+    
     private boolean esOptimo() {
-        // Para maximización: todos los coeficientes en la fila Z deben ser >= 0
-        // Para minimización: todos los coeficientes en la fila Z deben ser <= 0
-        for (int j = 0; j < numVariablesTotales; j++) {
-            if (esMaximizacion) {
-                if (tabla[numRestricciones][j] < -0.0001) return false;
-            } else {
-                if (tabla[numRestricciones][j] > 0.0001) return false;
+        if (esMaximizacion) {
+            // Maximización: todos los coeficientes en Z deben ser ≥ 0
+            for (int j = 0; j < numVariablesTotales; j++) {
+                if (tabla[numRestricciones][j] < -0.0001) {
+                    return false;
+                }
+            }
+        } else {
+            // Minimización: todos los coeficientes en Z deben ser ≤ 0
+            for (int j = 0; j < numVariablesTotales; j++) {
+                if (tabla[numRestricciones][j] > 0.0001) {
+                    return false;
+                }
             }
         }
         return true;
     }
+    
     private int encontrarColumnaPivote() {
-        int columnaPivote = -1;
-        double valorMasNegativo = 0;
         if (esMaximizacion) {
-            // Para maximización: buscar el valor más negativo
+            // Maximización: buscar el valor más negativo en Z
+            double minValor = 0;
+            int columna = -1;
             for (int j = 0; j < numVariablesTotales; j++) {
-                if (tabla[numRestricciones][j] < valorMasNegativo) {
-                    valorMasNegativo = tabla[numRestricciones][j];
-                    columnaPivote = j;
+                if (tabla[numRestricciones][j] < minValor) {
+                    minValor = tabla[numRestricciones][j];
+                    columna = j;
                 }
             }
+            return columna;
         } else {
-            // Para minimización: buscar el valor más positivo
+            // Minimización: buscar el valor más positivo en Z
+            double maxValor = 0;
+            int columna = -1;
             for (int j = 0; j < numVariablesTotales; j++) {
-                if (tabla[numRestricciones][j] > valorMasNegativo) {
-                    valorMasNegativo = tabla[numRestricciones][j];
-                    columnaPivote = j;
+                if (tabla[numRestricciones][j] > maxValor) {
+                    maxValor = tabla[numRestricciones][j];
+                    columna = j;
                 }
             }
-        }  
-        return columnaPivote;
+            return columna;
+        }
     }
+    
     private int encontrarFilaPivote(int columnaPivote) {
         int filaPivote = -1;
         double minRatio = Double.MAX_VALUE;
+        
         for (int i = 0; i < numRestricciones; i++) {
-            if (tabla[i][columnaPivote] > 0.0001) { // Evitar división por cero
+            if (tabla[i][columnaPivote] > 0.0001) {
                 double ratio = tabla[i][numVariablesTotales] / tabla[i][columnaPivote];
                 if (ratio >= 0 && ratio < minRatio) {
                     minRatio = ratio;
@@ -130,14 +189,18 @@ public class MetodoSimplex {
                 }
             }
         }
+        
         return filaPivote;
     }
+    
     private void realizarPivoteo(int filaPivote, int columnaPivote) {
         double elementoPivote = tabla[filaPivote][columnaPivote];
+        
         // Normalizar la fila pivote
         for (int j = 0; j <= numVariablesTotales; j++) {
             tabla[filaPivote][j] /= elementoPivote;
         }
+        
         // Actualizar las demás filas
         for (int i = 0; i <= numRestricciones; i++) {
             if (i != filaPivote) {
@@ -148,62 +211,57 @@ public class MetodoSimplex {
             }
         }
     }
+    
     private void imprimirTabla() {
         // Encabezado
         System.out.print("\nBase\t");
-        for (int j = 0; j < numVariables; j++) {
-            System.out.printf("x%d\t", j + 1);
-        }
-        for (int j = 0; j < numRestricciones; j++) {
-            System.out.printf("s%d\t", j + 1);
+        for (int j = 0; j < numVariablesTotales; j++) {
+            System.out.printf("%s\t", nombresVariables[j]);
         }
         System.out.println("LD");
+        
         // Filas de restricciones
         for (int i = 0; i < numRestricciones; i++) {
-            if (variablesBasicas[i] < numVariables) {
-                System.out.printf("x%d\t", variablesBasicas[i] + 1);
-            } else {
-                System.out.printf("s%d\t", variablesBasicas[i] - numVariables + 1);
-            }  
+            System.out.printf("%s\t", nombresVariables[variablesBasicas[i]]);
             for (int j = 0; j <= numVariablesTotales; j++) {
-                System.out.printf("%.2f\t", tabla[i][j]);
+                System.out.printf("%.4f\t", tabla[i][j]);
             }
             System.out.println();
         }
+        
         // Fila Z
         System.out.print("Z\t");
         for (int j = 0; j <= numVariablesTotales; j++) {
-            System.out.printf("%.2f\t", tabla[numRestricciones][j]);
+            System.out.printf("%.4f\t", tabla[numRestricciones][j]);
         }
         System.out.println();
     }
+    
     private void mostrarSolucion() {
         System.out.println("\n=== SOLUCIÓN ÓPTIMA ===");
-        // Valores de las variables de decisión
-        double[] solucion = new double[numVariables];
+        
+        // Valores de las variables
+        double[] valores = new double[numVariablesTotales];
         for (int i = 0; i < numRestricciones; i++) {
-            if (variablesBasicas[i] < numVariables) {
-                solucion[variablesBasicas[i]] = tabla[i][numVariablesTotales];
-            }
+            valores[variablesBasicas[i]] = tabla[i][numVariablesTotales];
         }
+        
         System.out.println("Valores de las variables:");
-        for (int i = 0; i < numVariables; i++) {
-            System.out.printf("x%d = %.4f\n", i + 1, solucion[i]);
+        for (int i = 0; i < numVariablesTotales; i++) {
+            System.out.printf("%s = %.4f\n", nombresVariables[i], valores[i]);
         }
+        
         // Valor óptimo de Z
-        double valorOptimo = tabla[numRestricciones][numVariablesTotales];
-        if (!esMaximizacion) {
-            valorOptimo = -valorOptimo; // Ajustar para minimización
-        }
-        System.out.printf("Valor óptimo de Z = %.4f\n", valorOptimo);
-        // Variables básicas
-        System.out.println("\nVariables básicas en la solución:");
-        for (int i = 0; i < numRestricciones; i++) {
-            if (variablesBasicas[i] < numVariables) {
-                System.out.printf("x%d = %.4f\n", variablesBasicas[i] + 1, tabla[i][numVariablesTotales]);
-            } else {
-                System.out.printf("s%d = %.4f\n", variablesBasicas[i] - numVariables + 1, tabla[i][numVariablesTotales]);
-            }
+        double valorZ = tabla[numRestricciones][numVariablesTotales];
+        System.out.printf("\nValor óptimo de Z = %.4f\n", valorZ);
+        
+        // Mostrar función objetivo óptima
+        System.out.println("\nFunciÓn objetivo óptima:");
+        if (esMaximizacion) {
+            System.out.printf("Z = %.4f", valorZ);
+        } else {
+            System.out.printf("Z = %.4f", -valorZ);
         }
     }
 }
+
